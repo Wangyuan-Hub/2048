@@ -82,9 +82,9 @@ var lastSyncedScore = Number(storageGet('zhenyao2048_synced_v1_' + CONFIG.RANK_Z
 var nativeRankOpening = false;
 
 var BOSSES = [
-  { name: '饕餮', title: '青铜贪兽', value: 256, maxHP: 60, attack: 12, attackEvery: 5, mechanic: '妖袭吞噬最低阶妖块' },
-  { name: '穷奇', title: '雷翼凶虎', value: 512, maxHP: 100, attack: 18, attackEvery: 5, mechanic: '妖袭降下双雷与妖气' },
-  { name: '烛龙', title: '昼夜之龙', value: 2048, maxHP: 160, attack: 26, attackEvery: 4, mechanic: '昼夜交替，夜间合并伤害降低' }
+  { name: '饕餮', title: '青铜贪兽', value: 256, maxHP: 60, attack: 12, attackEvery: 5, mechanic: '妖袭吞噬最低阶妖块', weakSkill: 'bifang', weakName: '毕方焚林' },
+  { name: '穷奇', title: '雷翼凶虎', value: 512, maxHP: 100, attack: 18, attackEvery: 5, mechanic: '妖袭降下双雷与妖气', weakSkill: 'jiuwei', weakName: '九尾魅惑' },
+  { name: '烛龙', title: '昼夜之龙', value: 2048, maxHP: 160, attack: 26, attackEvery: 4, mechanic: '昼夜交替，夜间合并伤害降低', weakSkill: 'yinglong', weakName: '应龙甘霖' }
 ];
 
 var SKILLS = [
@@ -122,6 +122,14 @@ var attackEveryCurrent = 5;
 var attackDamageCurrent = 12;
 var isNight = false;
 var maxCombo = 0;
+var bossStun = 0;
+var screenShakeUntil = 0;
+var screenShakePower = 0;
+var flashUntil = 0;
+var flashColor = 'rgba(0,0,0,0)';
+var bossBannerText = '';
+var bossBannerColor = '#ffffff';
+var bossBannerUntil = 0;
 
 var TILE_COLORS = {
   2: '#eee4da',
@@ -356,7 +364,14 @@ function tryMove(direction) {
     bossHP = Math.max(0, bossHP - bonus);
     gainedScore += bonus * 20 + combo * 10;
     energy += combo - 1;
-    addFloatingText(combo + '连击!', 1.5, 1.5, '#FFD36E');
+    addFloatingText(combo + '连击!', 1.5, 1.5, '#FFD36E', 20);
+    triggerShake(6, 220);
+    if (combo >= 3) {
+      bossStun = 1;
+      showBossBanner(combo + ' 连击 · 打断!', '#FFD36E', 1000);
+    } else {
+      showBossBanner(combo + ' 连击!', '#FFD36E', 750);
+    }
     vibrate('medium');
   }
 
@@ -499,6 +514,10 @@ function startBattle(index) {
   attackEveryCurrent = boss.attackEvery;
   attackDamageCurrent = boss.attack;
   isNight = false;
+  bossStun = 0;
+  screenShakeUntil = 0;
+  flashUntil = 0;
+  bossBannerUntil = 0;
   movesSinceAttack = 0;
   turnCount = 0;
   mergeCount = 0;
@@ -556,11 +575,27 @@ function getMergeDamage(value) {
   return dmg;
 }
 
-function addFloatingText(text, row, col, color) {
+function addFloatingText(text, row, col, color, size) {
   var x = BOARD_X + BOARD_PAD + col * (CELL + TILE_GAP) + CELL / 2;
   var y = BOARD_Y + BOARD_PAD + row * (CELL + TILE_GAP) + CELL / 2;
-  floatingTexts.push({ text: text, x: x, y: y, bornAt: Date.now(), color: color || '#776e65' });
+  floatingTexts.push({ text: text, x: x, y: y, bornAt: Date.now(), color: color || '#776e65', size: size || 13 });
   if (floatingTexts.length > 24) floatingTexts.shift();
+}
+
+function triggerShake(power, ms) {
+  screenShakePower = power;
+  screenShakeUntil = Date.now() + ms;
+}
+
+function triggerFlash(color, ms) {
+  flashColor = color;
+  flashUntil = Date.now() + ms;
+}
+
+function showBossBanner(text, color, ms) {
+  bossBannerText = text;
+  bossBannerColor = color || '#ffffff';
+  bossBannerUntil = Date.now() + ms;
 }
 
 function addCurseTile() {
@@ -614,43 +649,58 @@ function checkBossEnrage() {
   var boss = BOSSES[stageIndex];
   attackEveryCurrent = Math.max(3, boss.attackEvery - 1);
   attackDamageCurrent = boss.attack + 6;
-  addFloatingText('狂暴!', 1.5, 1.5, '#C94C4C');
+  addFloatingText('狂暴!', 1.5, 1.5, '#C94C4C', 20);
+  showBossBanner('狂暴!', '#FF6B6B', 1200);
+  triggerShake(8, 300);
+  triggerFlash('rgba(201,76,76,0.18)', 250);
   showToast(boss.name + '进入狂暴，妖袭更频繁！');
   vibrate('heavy');
 }
 
 function bossAttack() {
+  if (bossStun > 0) {
+    bossStun--;
+    movesSinceAttack = 0;
+    showBossBanner('妖袭被打断!', '#EDCF72', 1000);
+    addFloatingText('打断!', 1.5, 1.5, '#EDCF72', 20);
+    showToast('连击打断了' + BOSSES[stageIndex].name + '的妖袭！');
+    vibrate('medium');
+    return;
+  }
+
   var boss = BOSSES[stageIndex];
   var dmg = attackDamageCurrent;
   var message = '';
 
   if (stageIndex === 0) {
     var devoured = devourLowestTile();
-    if (devoured) {
-      message = '吞噬了最低阶妖块';
-    } else {
-      addCurseTile();
-      message = '降下妖气';
-    }
+    bossHP = Math.min(bossMaxHP, bossHP + 8);
+    if (!devoured) addCurseTile();
     if (bossEnraged) addCurseTile();
+    message = devoured ? '吞噬最低阶妖块并恢复生命' : '降下妖气';
+    showBossBanner('饕餮 · 吞噬!', '#F67C5F', 1100);
+    triggerShake(8, 260);
+    triggerFlash('rgba(201,76,76,0.14)', 200);
   } else if (stageIndex === 1) {
     addCurseTile();
     addCurseTile();
     message = '降下双雷';
+    showBossBanner('穷奇 · 双雷!', '#6FA8FF', 1100);
+    triggerShake(10, 280);
+    triggerFlash('rgba(110,168,255,0.18)', 200);
   } else {
     isNight = !isNight;
     addCurseTile();
-    if (isNight) {
-      dmg += 6;
-      message = '进入夜晚';
-    } else {
-      message = '进入白昼';
-    }
+    if (isNight) dmg += 6;
+    message = isNight ? '进入夜晚' : '进入白昼';
+    showBossBanner(isNight ? '烛龙 · 夜幕降临!' : '烛龙 · 白昼回归!', isNight ? '#AEB8D6' : '#E8B33A', 1200);
+    triggerShake(6, 260);
+    triggerFlash(isNight ? 'rgba(46,58,89,0.22)' : 'rgba(232,179,58,0.12)', 250);
   }
 
   playerHP -= dmg;
   movesSinceAttack = 0;
-  addFloatingText('-' + dmg, 1.5, 1.5, '#C94C4C');
+  addFloatingText('-' + dmg, 1.5, 1.5, '#C94C4C', 18);
   showToast(boss.name + message + '！灵台 -' + dmg);
   vibrate('heavy');
 
@@ -765,7 +815,6 @@ function useSkill(id) {
     score += dmg * 10;
     addFloatingText('焚林 -' + dmg, 1.5, 1.5, '#F67C5F');
     showToast('毕方焚林：清除 ' + curses + ' 个妖气，Boss -' + dmg);
-    if (bossHP > 0) checkBossEnrage();
     vibrate('medium');
   } else if (id === 'yinglong') {
     var healed = Math.min(playerMaxHP, playerHP + 35) - playerHP;
@@ -773,10 +822,25 @@ function useSkill(id) {
     showToast('应龙甘霖：灵台 +' + healed);
   }
 
+  var boss = BOSSES[stageIndex];
+  if (skill.id === boss.weakSkill) {
+    bossHP = Math.max(0, bossHP - 20);
+    score += 200;
+    if (score > best) { best = score; storageSet(BEST_KEY, best); }
+    addFloatingText('弱点 -20', 1.5, 1.5, '#FFD36E', 18);
+    showBossBanner('击中弱点!', '#FFD36E', 900);
+    triggerFlash('rgba(237,194,46,0.16)', 200);
+    triggerShake(6, 220);
+    if (skill.id === 'jiuwei') bossStun = 1;
+    if (skill.id === 'yinglong' && stageIndex === 2) isNight = false;
+    vibrate('medium');
+  }
+
   if (bossHP <= 0) {
     onBossDefeated();
     return;
   }
+  checkBossEnrage();
   if (!hasMoves()) defeatBattle('无路可走');
 }
 
@@ -1269,6 +1333,7 @@ function drawHeader() {
   var phaseTag = '';
   if (stageIndex === 2) phaseTag = isNight ? ' · 夜' : ' · 昼';
   if (bossEnraged) phaseTag += ' · 狂暴';
+  if (bossStun > 0) phaseTag += ' · 眩晕';
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -1280,7 +1345,7 @@ function drawHeader() {
   ctx.fillText('第 ' + (stageIndex + 1) + '/' + BOSSES.length + ' 关 · ' + boss.title, bx + 60, by + 26);
   ctx.fillStyle = '#b8afa5';
   ctx.font = '8px Arial, sans-serif';
-  ctx.fillText(boss.mechanic, bx + 60, by + 38);
+  ctx.fillText(boss.mechanic + ' | 弱点：' + boss.weakName, bx + 60, by + 38);
 
   var barX = bx + 60;
   var barY = by + 51;
@@ -1590,7 +1655,7 @@ function drawFloatingTexts(now) {
     }
     ctx.globalAlpha = Math.max(0, 1 - age / 900);
     ctx.fillStyle = f.color;
-    ctx.font = 'bold 13px Arial, sans-serif';
+    ctx.font = 'bold ' + (f.size || 13) + 'px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(f.text, f.x, f.y - age * 0.04);
@@ -1665,6 +1730,26 @@ function drawVictory() {
   drawButton('victory-leaderboard', '全服榜', px + 24, py + 226, panelW - 48, 38, '#edc22e', '#776e65', 14);
 }
 
+function drawFlash() {
+  if (Date.now() >= flashUntil) return;
+  ctx.fillStyle = flashColor;
+  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+}
+
+function drawBossBanner() {
+  if (Date.now() >= bossBannerUntil) return;
+  var boxW = Math.min(SCREEN_W - 50, 320);
+  var boxH = 58;
+  var bx = (SCREEN_W - boxW) / 2;
+  var by = (SCREEN_H - boxH) / 2;
+  drawRoundRect(bx, by, boxW, boxH, 14, 'rgba(30,24,20,0.80)');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = bossBannerColor;
+  ctx.font = 'bold ' + (bossBannerText.length > 9 ? 18 : 22) + 'px Arial, sans-serif';
+  ctx.fillText(bossBannerText, SCREEN_W / 2, by + boxH / 2 + 1);
+}
+
 function render(now) {
   now = now || Date.now();
   buttons = [];
@@ -1672,6 +1757,13 @@ function render(now) {
   ctx.clearRect(0, 0, SCREEN_W, SCREEN_H);
   ctx.fillStyle = '#faf8ef';
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+  ctx.save();
+  var t = Date.now();
+  if (t < screenShakeUntil) {
+    var p = (screenShakeUntil - t) / 250;
+    ctx.translate((Math.random() - 0.5) * screenShakePower * p, (Math.random() - 0.5) * screenShakePower * p);
+  }
 
   drawHeader();
   drawBoard(now);
@@ -1689,6 +1781,9 @@ function render(now) {
     drawLeaderboard();
   }
 
+  ctx.restore();
+  drawFlash();
+  drawBossBanner();
   drawToast(now);
   requestAnimationFrame(render);
 }
@@ -1716,4 +1811,17 @@ function boot() {
   requestAnimationFrame(render);
 }
 
+if (typeof window !== 'undefined') {
+  window.__zhenyaoStartBoss = function (index) {
+    score = 0;
+    maxCombo = 0;
+    playerMaxHP = 100;
+    playerHP = 100;
+    relics = [];
+    revivesLeft = CONFIG.MAX_REVIVES;
+    submittedThisRun = false;
+    bossStun = 0;
+    startBattle(index);
+  };
+}
 boot();
