@@ -1,9 +1,17 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>2048 小游戏</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#bbada0">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="2048">
 <style>
 :root{ --cell:110px; --gap:12px; }
 *{ box-sizing:border-box; }
@@ -84,6 +92,15 @@ button:hover{ background:#9f8b77; }
   .scores{ justify-content:flex-end; }
   .intro{ font-size:13px; }
 }
+/* PWA / 手机适配 */
+html,body{ overscroll-behavior:none; }
+body{ -webkit-tap-highlight-color:transparent; }
+.toolbar-actions{ display:flex; gap:8px; align-items:center; }
+#btn-install{ background:#edc22e; color:#776e65; }
+#btn-install:hover{ background:#f2d04f; }
+@media (max-width:560px){
+  .wrap{ padding-top:calc(10px + env(safe-area-inset-top)); padding-bottom:calc(44px + env(safe-area-inset-bottom)); }
+}
 </style>
 </head>
 <body>
@@ -100,7 +117,7 @@ button:hover{ background:#9f8b77; }
   </div>
 
   <div class="toolbar">
-    <button id="btn-new">新游戏</button>
+    <div class="toolbar-actions"><button id="btn-new">新游戏</button><button id="btn-install" style="display:none">安装到手机</button></div>
     <span class="hint">← ↑ ↓ → / WASD / 触摸滑动</span>
   </div>
 
@@ -381,6 +398,38 @@ button:hover{ background:#9f8b77; }
 
   measure();
   reset();
+
+  // PWA：注册 Service Worker 并处理“安装到手机”
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    });
+  }
+  var deferredPrompt = null;
+  var btnInstall = document.getElementById('btn-install');
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS && btnInstall) btnInstall.style.display = '';
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (btnInstall) btnInstall.style.display = '';
+  });
+  if (btnInstall) {
+    btnInstall.addEventListener('click', function () {
+      if (!deferredPrompt) {
+        alert('请在浏览器菜单中选择“安装应用”或“添加到主屏幕”。\n\niPhone：点击分享按钮 → 添加到主屏幕');
+        return;
+      }
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function () {
+        deferredPrompt = null;
+        btnInstall.style.display = 'none';
+      });
+    });
+  }
+  window.addEventListener('appinstalled', function () {
+    if (btnInstall) btnInstall.style.display = 'none';
+  });
 })();
 </script>
 </body>
