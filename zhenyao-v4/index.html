@@ -45,11 +45,16 @@
   @media (max-width:600px) {
     #game-canvas { border-radius:0; box-shadow:none; }
   }
-</style>
+  #version-stamp {
+    position:fixed; top:8px; right:8px; z-index:70; pointer-events:none;
+    background:#c94c4c; color:#fff; font-size:12px; font-weight:700;
+    padding:4px 9px; border-radius:9px; box-shadow:0 2px 6px rgba(0,0,0,.2);
+  }</style>
 </head>
 <body>
+<div id="version-stamp">v0.4</div>
 <div id="game-root"></div>
-<div id="demo-badge">网页体验版 v0.3 · 模拟广告</div>
+<div id="demo-badge">v0.4 · 网页体验版 · 音效/特效 · 模拟广告</div>
 <div id="boss-select">
   <span>试玩Boss</span>
   <button data-boss="0">饕餮</button>
